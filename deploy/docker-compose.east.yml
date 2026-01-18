@@ -1,0 +1,98 @@
+# Docker Compose Stack for East Server (192.168.86.51)
+# Supporting services: Redis, Monitoring
+# Deploy: docker compose -f docker-compose.east.yml up -d
+
+version: '3.8'
+
+services:
+  # ===========================================================================
+  # MESSAGE QUEUE (Redis)
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+        reservations:
+          memory: 512M
+
+  # ===========================================================================
+  # MONITORING (Netdata)
+  # ===========================================================================
+  netdata:
+    image: netdata/netdata:stable
+    container_name: netdata
+    hostname: linux-home
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - apparmor:unconfined
+    volumes:
+      - netdata_config:/etc/netdata
+      - netdata_lib:/var/lib/netdata
+      - netdata_cache:/var/cache/netdata
+      - /etc/passwd:/host/etc/passwd:ro
+      - /etc/group:/host/etc/group:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/os-release:/host/etc/os-release:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "19999:19999"
+    restart: unless-stopped
+    environment:
+      - NETDATA_CLAIM_TOKEN=  # Optional: claim to Netdata Cloud
+      - NETDATA_CLAIM_ROOMS=
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ===========================================================================
+  # REVERSE PROXY (Nginx)
+  # ===========================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-east
+    volumes:
+      - ./nginx-east/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx-east/conf.d:/etc/nginx/conf.d:ro
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+volumes:
+  redis_data:
+    driver: local
+  netdata_config:
+    driver: local
+  netdata_lib:
+    driver: local
+  netdata_cache:
+    driver: local
+
+networks:
+  default:
+    name: east-network
+    driver: bridge

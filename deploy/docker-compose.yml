@@ -1,0 +1,184 @@
+# Docker Compose Stack for AI Server (192.168.86.56)
+# Deploy: docker compose up -d
+# Monitor: docker compose logs -f
+
+version: '3.8'
+
+services:
+  # ===========================================================================
+  # SPEECH-TO-TEXT (Faster-Whisper)
+  # ===========================================================================
+  faster-whisper:
+    image: fedirz/faster-whisper-server:latest-cpu
+    container_name: faster-whisper
+    environment:
+      - WHISPER__MODEL=${WHISPER_MODEL:-tiny.en}
+      - WHISPER__DEVICE=${WHISPER_DEVICE:-cpu}
+      - WHISPER__COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8}
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+  # ===========================================================================
+  # TEXT-TO-SPEECH (Kokoro)
+  # ===========================================================================
+  kokoro-tts:
+    image: ghcr.io/remsky/kokoro-fastapi:v0.2.2-cpu
+    container_name: kokoro-tts
+    environment:
+      - DEVICE=cpu
+      - DEFAULT_VOICE=${TTS_VOICE:-af_bella}
+    ports:
+      - "8880:8880"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8880/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+  # ===========================================================================
+  # DATABASE (PostgreSQL)
+  # ===========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: agent-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agent_memory}
+      POSTGRES_USER: ${POSTGRES_USER:-agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts/postgres:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agent} -d ${POSTGRES_DB:-agent_memory}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # ===========================================================================
+  # VECTOR DATABASE (ChromaDB)
+  # ===========================================================================
+  chromadb:
+    image: chromadb/chroma:0.4.24
+    container_name: chromadb
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=FALSE
+    volumes:
+      - chroma_data:/chroma/chroma
+    ports:
+      - "8001:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
+  # ===========================================================================
+  # VOICE ASSISTANT (Gradio UI)
+  # ===========================================================================
+  voice-assistant:
+    build:
+      context: ../voice-assistant
+      dockerfile: Dockerfile
+    container_name: voice-assistant
+    depends_on:
+      faster-whisper:
+        condition: service_healthy
+      kokoro-tts:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL_DEFAULT:-qwen2.5:3b}
+      - STT_URL=http://faster-whisper:8000
+      - TTS_URL=http://kokoro-tts:8880
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-agent}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB:-agent_memory}
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      - REDIS_HOST=${REDIS_HOST:-192.168.86.51}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    ports:
+      - "${VOICE_ASSISTANT_PORT:-7860}:7860"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
+  # ===========================================================================
+  # NGINX REVERSE PROXY (Optional - for external access)
+  # ===========================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - voice-assistant
+      - faster-whisper
+      - kokoro-tts
+    restart: unless-stopped
+    profiles:
+      - proxy  # Only start with: docker compose --profile proxy up
+
+volumes:
+  postgres_data:
+    driver: local
+  chroma_data:
+    driver: local
+
+networks:
+  default:
+    name: agent-network
+    driver: bridge

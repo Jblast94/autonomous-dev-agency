@@ -1,0 +1,27 @@
+# Voice Assistant Dependencies
+
+# Web framework
+gradio>=4.0.0
+
+# HTTP client
+httpx>=0.25.0
+
+# Data validation
+pydantic>=2.0.0
+
+# Audio processing
+numpy>=1.24.0
+soundfile>=0.12.0
+
+# Database (optional, for persistent storage)
+asyncpg>=0.29.0
+sqlalchemy[asyncio]>=2.0.0
+
+# Vector store client (optional)
+chromadb>=0.4.0
+
+# Redis client (optional, for message queue)
+redis>=5.0.0
+
+# Utilities
+python-dotenv>=1.0.0

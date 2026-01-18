@@ -1,0 +1,254 @@
+# Agent Configuration
+# Defines agent roles, permissions, and behaviors
+
+agents:
+  # ===========================================================================
+  # ORCHESTRATOR - Coordinates all other agents
+  # ===========================================================================
+  orchestrator:
+    name: "Orchestrator"
+    description: "Coordinates task decomposition and agent delegation"
+    model: "qwen2.5:7b"
+    temperature: 0.3
+    max_tokens: 4096
+    
+    capabilities:
+      - task_decomposition
+      - agent_delegation
+      - progress_tracking
+      - escalation_handling
+    
+    tools:
+      - subagent_spawn
+      - task_queue
+      - state_manager
+      - escalation
+    
+    constraints:
+      - "Does not implement code directly"
+      - "Must decompose tasks before delegation"
+      - "Escalates to human after 3 failed attempts"
+    
+    escalation_triggers:
+      - "Ambiguous requirements after clarification attempt"
+      - "Security-sensitive operations"
+      - "Database schema changes"
+      - "Deployment to production"
+
+  # ===========================================================================
+  # SENIOR DEVELOPER - Complex feature implementation
+  # ===========================================================================
+  senior_developer:
+    name: "Senior Developer"
+    description: "Implements complex features and architectural components"
+    model: "qwen2.5:7b"
+    temperature: 0.2
+    max_tokens: 8192
+    
+    capabilities:
+      - feature_implementation
+      - code_refactoring
+      - architecture_decisions
+      - code_review
+    
+    tools:
+      - file_read
+      - file_write
+      - file_edit
+      - bash
+      - git
+      - test_runner
+    
+    allowed_paths:
+      - "src/"
+      - "lib/"
+      - "tests/"
+      - "docs/"
+    
+    forbidden_paths:
+      - "config/production/"
+      - "secrets/"
+      - ".env"
+      - "deploy/"
+    
+    constraints:
+      - "Cannot push to protected branches"
+      - "Must write tests for new features"
+      - "Cannot modify CI/CD configuration"
+    
+    escalation_triggers:
+      - "Architectural ambiguity after reading docs"
+      - "Tests failing after 3 implementation attempts"
+      - "Dependencies on unavailable external systems"
+      - "Task estimated >4 hours"
+
+  # ===========================================================================
+  # TEST SPECIALIST - Test strategy and automation
+  # ===========================================================================
+  test_specialist:
+    name: "Test Specialist"
+    description: "Designs and implements test strategies"
+    model: "qwen2.5:3b"
+    temperature: 0.1
+    max_tokens: 4096
+    
+    capabilities:
+      - test_design
+      - test_implementation
+      - coverage_analysis
+      - regression_testing
+    
+    tools:
+      - file_read
+      - file_write
+      - test_runner
+      - coverage_tool
+    
+    allowed_paths:
+      - "tests/"
+      - "src/"  # read-only for source
+    
+    constraints:
+      - "Read-only access to production code"
+      - "Cannot modify source implementation"
+      - "Must achieve >80% coverage for new code"
+    
+    quality_gates:
+      min_coverage: 80
+      max_test_duration_seconds: 300
+      required_test_types:
+        - unit
+        - integration
+
+  # ===========================================================================
+  # SECURITY REVIEWER - Vulnerability analysis
+  # ===========================================================================
+  security_reviewer:
+    name: "Security Reviewer"
+    description: "Analyzes code for security vulnerabilities"
+    model: "qwen2.5:7b"
+    temperature: 0.1
+    max_tokens: 4096
+    
+    capabilities:
+      - vulnerability_scanning
+      - code_audit
+      - dependency_check
+      - compliance_review
+    
+    tools:
+      - file_read
+      - security_scanner
+      - dependency_checker
+    
+    allowed_paths:
+      - "*"  # Can read all files
+    
+    constraints:
+      - "Read-only access to all files"
+      - "Cannot approve security exceptions"
+      - "Must report all findings"
+    
+    severity_levels:
+      critical:
+        - "SQL injection"
+        - "Command injection"
+        - "Hardcoded credentials"
+      high:
+        - "XSS vulnerabilities"
+        - "CSRF vulnerabilities"
+        - "Insecure deserialization"
+      medium:
+        - "Missing input validation"
+        - "Weak cryptography"
+        - "Verbose error messages"
+
+  # ===========================================================================
+  # DOCUMENTATION WRITER - Technical documentation
+  # ===========================================================================
+  documentation_writer:
+    name: "Documentation Writer"
+    description: "Creates and maintains technical documentation"
+    model: "qwen2.5:3b"
+    temperature: 0.4
+    max_tokens: 4096
+    
+    capabilities:
+      - readme_generation
+      - api_documentation
+      - user_guides
+      - changelog_updates
+    
+    tools:
+      - file_read
+      - file_write
+      - markdown_lint
+    
+    allowed_paths:
+      - "docs/"
+      - "README.md"
+      - "CHANGELOG.md"
+      - "*.md"
+    
+    forbidden_paths:
+      - "src/"
+      - "lib/"
+      - "tests/"
+    
+    constraints:
+      - "Cannot modify implementation code"
+      - "Must follow documentation style guide"
+      - "Must include code examples"
+
+# ===========================================================================
+# TEAM CONFIGURATIONS
+# ===========================================================================
+team_configurations:
+  minimal:
+    description: "Smallest viable team for simple projects"
+    agents:
+      - orchestrator
+      - senior_developer
+    combined_roles:
+      senior_developer:
+        - test_specialist
+        - documentation_writer
+  
+  standard:
+    description: "Balanced team for typical projects"
+    agents:
+      - orchestrator
+      - senior_developer
+      - test_specialist
+      - security_reviewer
+    combined_roles:
+      senior_developer:
+        - documentation_writer
+  
+  full:
+    description: "Full team for complex projects"
+    agents:
+      - orchestrator
+      - senior_developer
+      - test_specialist
+      - security_reviewer
+      - documentation_writer
+
+# ===========================================================================
+# DEFAULT SETTINGS
+# ===========================================================================
+defaults:
+  model: "qwen2.5:3b"
+  temperature: 0.2
+  max_tokens: 4096
+  timeout_seconds: 300
+  max_retries: 3
+  
+  context_window:
+    reset_threshold: 0.8  # Reset at 80% utilization
+    handoff_format: "structured_json"
+  
+  communication:
+    protocol: "a2a_json"
+    message_queue: "redis"
+    timeout_seconds: 30

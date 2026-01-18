@@ -1,0 +1,329 @@
+# Guardrails Configuration
+# Defines autonomy thresholds, rate limits, and safety constraints
+
+# ===========================================================================
+# AUTONOMY THRESHOLDS
+# ===========================================================================
+autonomy_thresholds:
+  low_risk:
+    description: "Safe operations that can proceed automatically"
+    domains:
+      - documentation
+      - testing
+      - linting
+      - formatting
+      - readme_updates
+    confidence_threshold: 0.65
+    auto_approve: true
+    require_review: false
+    max_tokens_per_task: 10000
+    
+  medium_risk:
+    description: "Standard operations requiring review"
+    domains:
+      - feature_implementation
+      - refactoring
+      - bug_fixes
+      - dependency_updates
+    confidence_threshold: 0.80
+    auto_approve: false
+    require_review: true
+    require_tests: true
+    max_tokens_per_task: 50000
+    
+  high_risk:
+    description: "Sensitive operations requiring human approval"
+    domains:
+      - database_changes
+      - security_modifications
+      - api_breaking_changes
+      - configuration_changes
+      - deployment
+      - financial_operations
+    confidence_threshold: 0.95
+    auto_approve: false
+    require_human_approval: true
+    multi_step_verification: true
+    max_tokens_per_task: 100000
+
+# ===========================================================================
+# RATE LIMITS
+# ===========================================================================
+rate_limits:
+  per_agent:
+    requests_per_minute: 30
+    tokens_per_minute: 50000
+    concurrent_tasks: 3
+    
+  per_integration:
+    github:
+      requests_per_minute: 20
+      writes_per_minute: 10
+    filesystem:
+      writes_per_minute: 100
+      deletes_per_minute: 20
+    database:
+      queries_per_minute: 100
+      mutations_per_minute: 30
+    external_api:
+      requests_per_minute: 10
+      
+  global:
+    total_tokens_per_hour: 500000
+    total_api_calls_per_hour: 1000
+    max_concurrent_agents: 10
+
+# ===========================================================================
+# CIRCUIT BREAKERS
+# ===========================================================================
+circuit_breakers:
+  error_threshold:
+    consecutive_failures: 3
+    failure_rate_percent: 50
+    window_seconds: 300
+    
+  actions:
+    on_open:
+      - pause_agent
+      - notify_human
+      - log_incident
+    on_half_open:
+      - reduce_rate_limit
+      - increase_logging
+    recovery_timeout_seconds: 60
+    
+  per_service:
+    ollama:
+      consecutive_failures: 5
+      recovery_timeout_seconds: 30
+    database:
+      consecutive_failures: 3
+      recovery_timeout_seconds: 60
+    external_api:
+      consecutive_failures: 2
+      recovery_timeout_seconds: 120
+
+# ===========================================================================
+# INPUT GUARDRAILS
+# ===========================================================================
+input_guardrails:
+  # Task boundary validation
+  task_validation:
+    max_task_description_length: 5000
+    required_fields:
+      - task_type
+      - description
+      - acceptance_criteria
+    forbidden_patterns:
+      - "ignore previous instructions"
+      - "disregard safety"
+      - "bypass security"
+      - "rm -rf /"
+      - "DROP TABLE"
+      
+  # Prompt injection detection
+  injection_detection:
+    enabled: true
+    patterns:
+      - "\\[INST\\]"
+      - "\\[/INST\\]"
+      - "<\\|im_start\\|>"
+      - "<\\|im_end\\|>"
+      - "system:"
+      - "### Human:"
+      - "### Assistant:"
+    action: reject_and_log
+    
+  # Relevance filtering
+  relevance_filter:
+    enabled: true
+    min_relevance_score: 0.5
+    off_topic_action: redirect_to_human
+
+# ===========================================================================
+# OUTPUT GUARDRAILS
+# ===========================================================================
+output_guardrails:
+  # PII scanning
+  pii_scanner:
+    enabled: true
+    patterns:
+      - type: email
+        regex: "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"
+        action: mask
+      - type: phone
+        regex: "\\b\\d{3}[-.]?\\d{3}[-.]?\\d{4}\\b"
+        action: mask
+      - type: ssn
+        regex: "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+        action: block
+      - type: credit_card
+        regex: "\\b\\d{4}[- ]?\\d{4}[- ]?\\d{4}[- ]?\\d{4}\\b"
+        action: block
+      - type: api_key
+        regex: "(?i)(api[_-]?key|secret|token|password)\\s*[=:]\\s*['\"]?[a-zA-Z0-9_-]{20,}"
+        action: block
+        
+  # Confidence scoring
+  confidence_scoring:
+    enabled: true
+    thresholds:
+      auto_approve: 0.90
+      require_review: 0.70
+      escalate_to_human: 0.50
+      reject: 0.30
+      
+  # Content validation
+  content_validation:
+    max_output_length: 50000
+    forbidden_content:
+      - malicious_code_patterns
+      - credential_exposure
+      - unsafe_system_commands
+
+# ===========================================================================
+# OPERATIONAL GUARDRAILS
+# ===========================================================================
+operational_guardrails:
+  # Token budgets
+  token_budgets:
+    per_task:
+      default: 50000
+      research: 100000
+      implementation: 75000
+      review: 25000
+    per_agent_session: 200000
+    per_project_day: 1000000
+    
+  # Time limits
+  time_limits:
+    task_default_seconds: 300
+    task_max_seconds: 1800
+    research_phase_seconds: 600
+    implementation_phase_seconds: 1200
+    review_phase_seconds: 300
+    
+  # Checkpointing
+  checkpointing:
+    enabled: true
+    interval_seconds: 60
+    on_phase_transition: true
+    on_error: true
+    retention_days: 7
+    
+  # Resource limits
+  resource_limits:
+    max_files_per_task: 50
+    max_file_size_bytes: 1048576  # 1MB
+    max_memory_mb: 4096
+    max_cpu_percent: 80
+
+# ===========================================================================
+# ESCALATION RULES
+# ===========================================================================
+escalation:
+  triggers:
+    - condition: "confidence_below_threshold"
+      threshold: 0.5
+      action: escalate_to_human
+      
+    - condition: "consecutive_failures"
+      count: 3
+      action: pause_and_notify
+      
+    - condition: "security_concern"
+      action: immediate_escalation
+      
+    - condition: "resource_limit_exceeded"
+      action: pause_and_review
+      
+    - condition: "unknown_error"
+      action: log_and_escalate
+      
+  notification:
+    channels:
+      - type: log
+        level: warning
+      - type: redis_pubsub
+        channel: agent_escalations
+    include:
+      - task_id
+      - agent_name
+      - reason
+      - context_summary
+      - suggested_actions
+
+# ===========================================================================
+# ALLOWED OPERATIONS
+# ===========================================================================
+allowed_operations:
+  filesystem:
+    read:
+      - "src/**"
+      - "lib/**"
+      - "tests/**"
+      - "docs/**"
+      - "*.md"
+      - "*.json"
+      - "*.yaml"
+      - "*.yml"
+    write:
+      - "src/**"
+      - "lib/**"
+      - "tests/**"
+      - "docs/**"
+    delete:
+      - "tests/**/*.pyc"
+      - "**/__pycache__/**"
+      - "**/.pytest_cache/**"
+    forbidden:
+      - ".env*"
+      - "secrets/**"
+      - "config/production/**"
+      - "**/*.key"
+      - "**/*.pem"
+      
+  git:
+    allowed_commands:
+      - status
+      - diff
+      - log
+      - add
+      - commit
+      - branch
+      - checkout
+      - pull
+    forbidden_commands:
+      - push  # Requires human approval
+      - force-push
+      - reset --hard
+      - clean -fd
+    protected_branches:
+      - main
+      - master
+      - production
+      
+  shell:
+    allowed_commands:
+      - ls
+      - cat
+      - head
+      - tail
+      - grep
+      - find
+      - wc
+      - python
+      - pytest
+      - npm
+      - node
+    forbidden_commands:
+      - rm -rf
+      - sudo
+      - chmod 777
+      - curl | bash
+      - wget | sh
+    forbidden_patterns:
+      - ">/dev/"
+      - "| sh"
+      - "| bash"
+      - "; rm"
