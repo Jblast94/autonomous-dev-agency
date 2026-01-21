@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agency-worker
+  namespace: agency
+  labels:
+    app: agency-worker
+    role: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: agency-worker
+  template:
+    metadata:
+      labels:
+        app: agency-worker
+        role: worker
+    spec:
+      containers:
+      - name: worker
+        image: python:3.11-slim
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            pip install redis requests && python /app/node.py
+        env:
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: LITELLM_URL
+          value: "http://litellm:4000"
+        volumeMounts:
+        - name: code-volume
+          mountPath: /app
+      volumes:
+      - name: code-volume
+        configMap:
+          name: worker-code
