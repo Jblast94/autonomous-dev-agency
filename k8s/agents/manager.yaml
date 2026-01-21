@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agency-manager
+  namespace: agency
+  labels:
+    app: agency-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agency-manager
+  template:
+    metadata:
+      labels:
+        app: agency-manager
+    spec:
+      serviceAccountName: agency-admin
+      containers:
+      - name: manager
+        image: python:3.11-slim
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            pip install kubernetes supabase mcp pydantic python-dotenv && python /app/manager.py
+        envFrom:
+        - secretRef:
+            name: agency-secrets
+        volumeMounts:
+        - name: code-volume
+          mountPath: /app
+      volumes:
+      - name: code-volume
+        configMap:
+          name: manager-code
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agency-admin
+  namespace: agency
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agency-admin-binding
+subjects:
+- kind: ServiceAccount
+  name: agency-admin
+  namespace: agency
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io

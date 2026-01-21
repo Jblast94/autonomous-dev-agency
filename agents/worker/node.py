@@ -1,0 +1,100 @@
+import os
+import json
+import time
+import logging
+import redis
+import subprocess
+from typing import Dict, Any
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] Worker: %(message)s')
+logger = logging.getLogger("AgencyWorker")
+
+class AgencyWorker:
+    def __init__(self):
+        # 1. Connect to Redis (Task Queue)
+        self.redis_host = os.getenv("REDIS_HOST", "redis")
+        self.redis_port = int(os.getenv("REDIS_PORT", 6379))
+        self.queue_name = "agency:tasks"
+
+        try:
+            self.redis = redis.Redis(host=self.redis_host, port=self.redis_port, db=0, decode_responses=True)
+            self.redis.ping()
+            logger.info(f"Connected to Redis at {self.redis_host}:{self.redis_port}")
+        except Exception as e:
+            logger.error(f"Failed to connect to Redis: {e}")
+            self.redis = None
+
+        # 2. LiteLLM Configuration
+        self.llm_base_url = os.getenv("LITELLM_URL", "http://litellm:4000")
+        self.api_key = os.getenv("LITELLM_MASTER_KEY", "sk-agency-internal-key")
+
+    def run_shell_command(self, command: str) -> str:
+        """Executes a shell command safely."""
+        logger.info(f"Executing command: {command}")
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            return result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
+        except Exception as e:
+            return f"Execution failed: {str(e)}"
+
+    def process_task(self, task_json: str):
+        """Parses and executes a task."""
+        try:
+            task = json.loads(task_json)
+            task_type = task.get("type", "unknown")
+            task_id = task.get("id", "unknown")
+
+            logger.info(f"Processing task {task_id} of type {task_type}")
+
+            result = ""
+            if task_type == "shell":
+                result = self.run_shell_command(task.get("command", "echo 'No command'"))
+            elif task_type == "echo":
+                result = f"Echo: {task.get("message")}"
+            else:
+                result = f"Unknown task type: {task_type}"
+
+            # In a real system, we would write this result back to Supabase or Redis
+            logger.info(f"Task {task_id} complete. Result: {result[:50]}...")
+
+        except json.JSONDecodeError:
+            logger.error("Failed to decode task JSON")
+        except Exception as e:
+            logger.error(f"Error processing task: {e}")
+
+    def start(self):
+        """Main loop: Polls Redis for tasks."""
+        if not self.redis:
+            logger.error("Redis not connected. Exiting.")
+            return
+
+        logger.info("Worker started. Waiting for tasks...")
+        while True:
+            try:
+                # Blocking pop from the queue
+                # brpop returns a tuple (queue_name, data)
+                task_data = self.redis.brpop(self.queue_name, timeout=5)
+
+                if task_data:
+                    self.process_task(task_data[1])
+
+                # Small sleep to prevent tight loop if redis goes down
+                time.sleep(0.1)
+
+            except redis.ConnectionError:
+                logger.error("Redis connection lost. Retrying in 5s...")
+                time.sleep(5)
+            except Exception as e:
+                logger.error(f"Unexpected error: {e}")
+                time.sleep(1)
+
+if __name__ == "__main__":
+    worker = AgencyWorker()
+    worker.start()
