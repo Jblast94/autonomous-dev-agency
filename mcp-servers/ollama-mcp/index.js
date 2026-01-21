@@ -24,6 +24,7 @@ const DEFAULT_REMOTE_MODEL = process.env.REMOTE_MODEL || 'qwen2.5:7b';
 class OllamaClient {
   constructor(baseUrl) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.availabilityCache = { timestamp: 0, status: false };
   }
 
   async chat(model, messages, options = {}) {
@@ -76,12 +77,22 @@ class OllamaClient {
   }
 
   async isAvailable() {
+    // Bolt: Cache availability to reduce latency and redundant network calls
+    const CACHE_TTL = 10000; // 10 seconds
+    const now = Date.now();
+
+    if (now - this.availabilityCache.timestamp < CACHE_TTL) {
+      return this.availabilityCache.status;
+    }
+
     try {
       const response = await fetch(`${this.baseUrl}/api/tags`, {
         signal: AbortSignal.timeout(5000),
       });
+      this.availabilityCache = { timestamp: now, status: response.ok };
       return response.ok;
     } catch {
+      this.availabilityCache = { timestamp: now, status: false };
       return false;
     }
   }
@@ -91,14 +102,19 @@ class OllamaClient {
 const localClient = new OllamaClient(LOCAL_OLLAMA_HOST);
 const remoteClient = new OllamaClient(REMOTE_OLLAMA_HOST);
 
+// Bolt: Pre-compile regex patterns for performance
+const REGEX_CODE = /code|implement|function|class|debug|fix/i;
+const REGEX_ANALYSIS = /analyze|explain|compare|evaluate/i;
+const REGEX_SIMPLE = /hello|hi|thanks|yes|no|ok/i;
+
 /**
  * Determine which client to use based on task complexity
  */
 function estimateComplexity(prompt) {
   const wordCount = prompt.split(/\s+/).length;
-  const hasCodeRequest = /code|implement|function|class|debug|fix/i.test(prompt);
-  const hasAnalysisRequest = /analyze|explain|compare|evaluate/i.test(prompt);
-  const hasSimpleRequest = /hello|hi|thanks|yes|no|ok/i.test(prompt);
+  const hasCodeRequest = REGEX_CODE.test(prompt);
+  const hasAnalysisRequest = REGEX_ANALYSIS.test(prompt);
+  const hasSimpleRequest = REGEX_SIMPLE.test(prompt);
 
   if (hasSimpleRequest && wordCount < 20) return 'simple';
   if (hasCodeRequest || hasAnalysisRequest || wordCount > 100) return 'complex';
