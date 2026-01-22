@@ -62,20 +62,34 @@ st.divider()
 st.subheader("📢 Dispatch Task")
 
 with st.form("dispatch_form"):
-    task_type = st.selectbox("Task Type", ["shell", "echo", "python"])
-    command = st.text_input("Command / Message", value="echo 'Hello World'")
+    task_type = st.selectbox(
+        "Task Type",
+        ["shell", "echo", "python"],
+        help="Select the type of task to execute on the worker node."
+    )
+    command = st.text_input(
+        "Command / Message",
+        value="echo 'Hello World'",
+        help="Enter the command to execute or message to echo."
+    )
 
     submitted = st.form_submit_button("Dispatch to Swarm")
-    if submitted and redis_connected:
-        task_payload = json.dumps({
-            "id": f"task-{int(datetime.now().timestamp())}",
-            "type": task_type,
-            "command": command,
-            "message": command, # for echo
-            "timestamp": str(datetime.now())
-        })
-        r.lpush("agency:tasks", task_payload)
-        st.success("Task dispatched to Redis Queue!")
+
+    if submitted:
+        if not redis_connected:
+            st.error("❌ Cannot dispatch: Redis is disconnected.")
+        elif not command.strip():
+            st.error("⚠️ Please enter a command.")
+        else:
+            task_payload = json.dumps({
+                "id": f"task-{int(datetime.now().timestamp())}",
+                "type": task_type,
+                "command": command,
+                "message": command, # for echo
+                "timestamp": str(datetime.now())
+            })
+            r.lpush("agency:tasks", task_payload)
+            st.success("✅ Task dispatched to Redis Queue!")
 
 # --- Worker Status ---
 st.divider()
@@ -92,7 +106,10 @@ if k8s_connected:
             "Node": pod.spec.node_name,
             "Created": str(pod.metadata.creation_timestamp)
         })
-    st.dataframe(pod_data, use_container_width=True)
+    if pod_data:
+        st.dataframe(pod_data, use_container_width=True)
+    else:
+        st.info("ℹ️ No active worker pods found.")
 else:
     st.info("Kubernetes connection required to see pod status.")
 
