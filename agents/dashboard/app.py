@@ -62,8 +62,17 @@ st.divider()
 st.subheader("📢 Dispatch Task")
 
 with st.form("dispatch_form"):
-    task_type = st.selectbox("Task Type", ["shell", "echo", "python"])
-    command = st.text_input("Command / Message", value="echo 'Hello World'")
+    task_type = st.selectbox(
+        "Task Type",
+        ["shell", "echo", "python"],
+        help="Select the type of task to dispatch."
+    )
+    command = st.text_area(
+        "Command / Message",
+        value="echo 'Hello World'",
+        height=100,
+        help="Enter the shell command, Python code, or message to be executed by the worker."
+    )
 
     submitted = st.form_submit_button("Dispatch to Swarm")
     if submitted and redis_connected:
