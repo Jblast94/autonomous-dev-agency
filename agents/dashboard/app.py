@@ -2,6 +2,7 @@ import streamlit as st
 import redis
 import os
 import json
+import time
 from kubernetes import client, config
 from datetime import datetime
 
@@ -62,8 +63,8 @@ st.divider()
 st.subheader("📢 Dispatch Task")
 
 with st.form("dispatch_form"):
-    task_type = st.selectbox("Task Type", ["shell", "echo", "python"])
-    command = st.text_input("Command / Message", value="echo 'Hello World'")
+    task_type = st.selectbox("Task Type", ["shell", "echo", "python"], help="Select the type of task to execute")
+    command = st.text_area("Command / Message", value="echo 'Hello World'", help="Enter the command or message to send to the worker")
 
     submitted = st.form_submit_button("Dispatch to Swarm")
     if submitted and redis_connected:
@@ -98,4 +99,5 @@ else:
 
 # --- Auto-Refresh ---
 if st.checkbox("Auto-Refresh (5s)"):
+    time.sleep(5)
     st.rerun()
