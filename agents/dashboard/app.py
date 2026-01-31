@@ -1,9 +1,10 @@
-import streamlit as st
-import redis
 import os
 import json
-from kubernetes import client, config
+import time
 from datetime import datetime
+import streamlit as st
+import redis
+from kubernetes import client, config
 
 # Page Config
 st.set_page_config(page_title="Agency Command Center", layout="wide")
@@ -62,8 +63,16 @@ st.divider()
 st.subheader("📢 Dispatch Task")
 
 with st.form("dispatch_form"):
-    task_type = st.selectbox("Task Type", ["shell", "echo", "python"])
-    command = st.text_input("Command / Message", value="echo 'Hello World'")
+    task_type = st.selectbox(
+        "Task Type",
+        ["shell", "echo", "python"],
+        help="Select the type of worker to execute this task"
+    )
+    command = st.text_area(
+        "Command / Message",
+        value="echo 'Hello World'",
+        help="Enter the shell command, python code, or message to send"
+    )
 
     submitted = st.form_submit_button("Dispatch to Swarm")
     if submitted and redis_connected:
@@ -98,4 +107,5 @@ else:
 
 # --- Auto-Refresh ---
 if st.checkbox("Auto-Refresh (5s)"):
+    time.sleep(5)
     st.rerun()
